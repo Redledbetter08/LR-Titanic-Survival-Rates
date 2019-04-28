@@ -1,0 +1,177 @@
+---
+title: "Titanic Kaggle Submission"
+output:  
+  html_document:
+    keep_md: true
+---
+
+For this project the goal is to predict whether or not a passenger survived the sinking of the Titanic using a number of different features such as the fare they paid, the class they were in and their age. You can view the full description of this project at https://www.kaggle.com/c/titanic.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ROCR)
+library(glmnet)
+library(ggplot2)
+library(reshape2)
+```
+
+### Read Data
+
+```{r read_data}
+df_train=read.table("train.csv",sep=",",header=TRUE)
+df_test=read.table("test.csv",sep=",",header=TRUE)
+summary(df_train)
+dim(df_train)
+head(df_train)
+```
+
+### Exploratory Analysis
+
+```{r variables}
+# categorize variables as Categorical and Numerical
+cat_var = c('Sex','Parch','Cabin','Embarked','Ticket','Name')
+num_var = c('Pclass','Age','Fare','SibSp')
+head(df_train[,cat_var])
+```
+
+Create pairs plot of numerical variables and color depending on whether or not the person survived.
+
+```{r color_function}
+pairs_color <- function(cls,clr){
+  
+  cols <- character(length(cls))
+  cols[] <- "black"
+  cols[cls== 1] <- clr
+  # return color vector
+  cols
+}
+```
+
+```{r pairs}
+pairs(df_train[,num_var],col=pairs_color(df_train$Survived,'red'))
+table(df_train$Survived)
+```
+
+Using Boxplots:
+
+```{r boxplots,fig.width=8,fig.height=6}
+# convert outcome class to factor
+df_train$Survived = as.factor(df_train$Survived)
+# create boxplots
+ggplot(melt(df_train),aes(x=Survived,y=value,colour=Survived)) + geom_boxplot() + facet_wrap(~variable,nrow=2,scales="free")
+```
+
+### Data cleaning
+
+Below we'll need to clean up the data before moving on to any model fitting.
+
+```{r various_data_cleanups}
+# replace NAs with 0
+df_train[is.na(df_train)] <- 0 
+df_test[is.na(df_test)] <- 0 
+
+# add cabin code
+df_train$Cabin_Code=substring(df_train$Cabin,1,1)
+df_train[df_train$Cabin_Code=='',]$Cabin_Code='N'
+df_train[df_train$Cabin_Code=='T',]$Cabin_Code='N'
+df_train$Cabin_Code = factor(df_train$Cabin_Code)
+
+df_test$Cabin_Code=substring(df_test$Cabin,1,1)
+df_test[df_test$Cabin_Code=='',]$Cabin_Code='N'
+df_test$Cabin_Code = factor(df_test$Cabin_Code)
+
+# Impute Embarked Missing Values
+levels(df_train$Embarked)[levels(df_train$Embarked)==""] <- "S"
+levels(df_train$Embarked)[levels(df_train$Embarked)=="T"] <- "S"
+levels(df_test$Embarked)[levels(df_test$Embarked)==""] <- "S"
+```
+
+Although the name feature contains too many classes to be a useful feature, there should be some useful information we can extract out of it such as the Title for each passenger.
+
+```{r extract_title}
+# extract title
+df_train$Title<-regmatches(as.character(df_train$Name),regexpr("\\,[A-z ]{1,20}\\.", as.character(df_train$Name)))
+df_train$Title<-unlist(lapply(df_train$Title,FUN=function(x) substr(x, 3, nchar(x)-1)))
+
+df_test$Title<-regmatches(as.character(df_test$Name),regexpr("\\,[A-z ]{1,20}\\.", as.character(df_test$Name)))
+df_test$Title<-unlist(lapply(df_test$Title,FUN=function(x) substr(x, 3, nchar(x)-1)))
+#table(df_train$Title)
+
+df_train$Title[which(df_train$Title %in% c("Mme", "Mlle","Ms"))] <- "Miss"
+df_train$Title[which(df_train$Title %in% c("Capt", "Col","Major"))] <- "Mil"
+df_train$Title[which(df_train$Title %in% c("Don", "Lady","Sir","the Countess"))] <- "VIP"
+# some googling reveals Jonkheer to be a title of low-ranking nobility within the Netherlands...
+df_train$Title[which(df_train$Title %in% c("Jonkheer"))] <- "Master"
+
+df_test$Title[which(df_test$Title %in% c("Mme", "Mlle","Ms"))] <- "Miss"
+df_test$Title[which(df_test$Title %in% c("Capt", "Col","Major"))] <- "Mil"
+df_test$Title[which(df_test$Title %in% c("Don", "Lady","Sir","the Countess","Dona"))] <- "VIP"
+df_test$Title[which(df_test$Title %in% c("Jonkheer"))] <- "Master"
+
+
+# I came across some rank deficiency errors when training the model so I'm going to group any title with a count less than 10 into 'other'
+df_train$Title[which(df_train$Title %in% c("Dr", "Mil","Rev","VIP"))] <- "Other"
+df_test$Title[which(df_test$Title %in% c("Dr", "Mil","Rev","VIP"))] <- "Other"
+
+df_train$Title = as.factor(df_train$Title)
+df_test$Title = as.factor(df_test$Title)
+table(df_train$Title)
+table(df_test$Title)
+```
+
+### Model Training
+
+The following function will be used to calculate Error, Accuracy, Sensitivity and Specificity for each model.
+
+```{r prediction_function}
+# function taken from solution to hw9
+summPreds <- function(inpPred,inpTruth,inpMetrNms=c("err","acc","sens","spec")) {
+  retVals <- numeric()
+  for ( metrTmp in inpMetrNms ) {
+    retVals[metrTmp] <- performance(ROCR::prediction(inpPred,inpTruth),measure=metrTmp)@y.values[[1]][2]
+  }
+  retVals
+}
+```
+
+Below we will try to fit the logistic regression model and will use bootstrapping of the training sample to help give us a better estimate of the training and test error.
+
+```{r logistic_regression_with_resampling }
+set.seed(1)
+dfTmpLR <- NULL
+for ( i in 1:50) { # for each group:
+    # create bootstrapped sample
+    trainIdx <- sample(nrow(df_train),nrow(df_train),replace=TRUE)
+    # train and fit model
+    data.train = df_train[trainIdx,]
+    data.test = df_train[-trainIdx,]
+    lr.fit = glm(Survived~Pclass+Sex+Age+SibSp+Embarked,data=data.train,family=binomial)
+    #train error
+    glm.probs = predict(lr.fit,data.train,type="response")
+    glm.pred=rep(0,nrow(data.train))
+    glm.pred[glm.probs>.5]=1
+    TrainErr = summPreds(as.numeric(glm.pred),as.numeric(data.train$Survived))
+    #test error
+    glm.probs.test = predict(lr.fit,data.test,type="response")
+    glm.pred.test=rep(0,nrow(data.test))
+    glm.pred.test[glm.probs.test>.5]=1
+    TestErr = summPreds(glm.pred.test,as.numeric(data.test$Survived))
+    
+    dfTmpLR = rbind(dfTmpLR,data.frame(run=i,model='LR',metric=c(names(TrainErr),names(TestErr)),value=c(TrainErr,TestErr),TrainTest=c('Train','Train','Train','Train','Test','Test','Test','Test')))
+}
+ggplot(data=dfTmpLR,aes(y=100*value,colour=TrainTest)) +
+geom_boxplot() +
+facet_wrap(~metric,scales='free') +
+labs(y='Error') + 
+ggtitle("Logistic Regression Error") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+Code to write to submissions final file included below:
+
+```{r write_to_file_Logistic_Regression}
+#final.predictions = data.frame(cbind(df_test[,'PassengerId'],as.factor(lrPred)))
+#colnames(final.predictions) = c('PassengerId','Survived')
+#final.predictions$Survived = ifelse(final.predictions$Survived==2,1,0) 
+#write.csv(final.predictions,'kaggle/titanic/all/titanic_predictions_LR.csv',row.names = FALSE)
+```
