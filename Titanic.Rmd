@@ -1,8 +1,6 @@
 ---
 title: "Titanic Kaggle Submission"
-output:  
-  html_document:
-    keep_md: true
+output: github_document
 ---
 
 For this project the goal is to predict whether or not a passenger survived the sinking of the Titanic using a number of different features such as the fare they paid, the class they were in and their age. You can view the full description of this project at https://www.kaggle.com/c/titanic.
