@@ -54,32 +54,6 @@ dim(df_train)
 
     ## [1] 891  12
 
-``` r
-head(df_train)
-```
-
-    ##   PassengerId Survived Pclass
-    ## 1           1        0      3
-    ## 2           2        1      1
-    ## 3           3        1      3
-    ## 4           4        1      1
-    ## 5           5        0      3
-    ## 6           6        0      3
-    ##                                                  Name    Sex Age SibSp
-    ## 1                             Braund, Mr. Owen Harris   male  22     1
-    ## 2 Cumings, Mrs. John Bradley (Florence Briggs Thayer) female  38     1
-    ## 3                              Heikkinen, Miss. Laina female  26     0
-    ## 4        Futrelle, Mrs. Jacques Heath (Lily May Peel) female  35     1
-    ## 5                            Allen, Mr. William Henry   male  35     0
-    ## 6                                    Moran, Mr. James   male  NA     0
-    ##   Parch           Ticket    Fare Cabin Embarked
-    ## 1     0        A/5 21171  7.2500              S
-    ## 2     0         PC 17599 71.2833   C85        C
-    ## 3     0 STON/O2. 3101282  7.9250              S
-    ## 4     0           113803 53.1000  C123        S
-    ## 5     0           373450  8.0500              S
-    ## 6     0           330877  8.4583              Q
-
 ### Exploratory Analysis
 
 ``` r
@@ -105,7 +79,7 @@ head(df_train[,cat_var])
     ## 6                                    Moran, Mr. James
 
 Create pairs plot of numerical variables and color depending on whether
-or not the person survived.
+or not the person survived. Red indicates a survivor.
 
 ``` r
 pairs_color <- function(cls,clr){
@@ -149,8 +123,8 @@ ggplot(melt(df_train),aes(x=Survived,y=value,colour=Survived)) + geom_boxplot() 
 
 ### Data cleaning
 
-Below we’ll need to clean up the data before moving on to any model
-fitting.
+Before attempting any fitting of the model we’ll need to clean up the
+data.
 
 ``` r
 # replace NAs with 0
@@ -222,10 +196,10 @@ table(df_test$Title)
 ### Model Training
 
 The following function will be used to calculate Error, Accuracy,
-Sensitivity and Specificity for each model.
+Sensitivity and Specificity for each
+model.
 
 ``` r
-# function taken from solution to hw9
 summPreds <- function(inpPred,inpTruth,inpMetrNms=c("err","acc","sens","spec")) {
   retVals <- numeric()
   for ( metrTmp in inpMetrNms ) {

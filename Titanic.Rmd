@@ -21,7 +21,6 @@ df_train=read.table("train.csv",sep=",",header=TRUE)
 df_test=read.table("test.csv",sep=",",header=TRUE)
 summary(df_train)
 dim(df_train)
-head(df_train)
 ```
 
 ### Exploratory Analysis
@@ -33,7 +32,7 @@ num_var = c('Pclass','Age','Fare','SibSp')
 head(df_train[,cat_var])
 ```
 
-Create pairs plot of numerical variables and color depending on whether or not the person survived.
+Create pairs plot of numerical variables and color depending on whether or not the person survived. Red indicates a survivor.
 
 ```{r color_function}
 pairs_color <- function(cls,clr){
@@ -46,14 +45,14 @@ pairs_color <- function(cls,clr){
 }
 ```
 
-```{r pairs}
+```{r pairs, fig.width=10,fig.height=6}
 pairs(df_train[,num_var],col=pairs_color(df_train$Survived,'red'))
 table(df_train$Survived)
 ```
 
 Using Boxplots:
 
-```{r boxplots,fig.width=8,fig.height=6}
+```{r boxplots,fig.width=10,fig.height=6}
 # convert outcome class to factor
 df_train$Survived = as.factor(df_train$Survived)
 # create boxplots
@@ -62,7 +61,7 @@ ggplot(melt(df_train),aes(x=Survived,y=value,colour=Survived)) + geom_boxplot() 
 
 ### Data cleaning
 
-Below we'll need to clean up the data before moving on to any model fitting.
+Before attempting any fitting of the model we'll need to clean up the data.
 
 ```{r various_data_cleanups}
 # replace NAs with 0
@@ -123,7 +122,6 @@ table(df_test$Title)
 The following function will be used to calculate Error, Accuracy, Sensitivity and Specificity for each model.
 
 ```{r prediction_function}
-# function taken from solution to hw9
 summPreds <- function(inpPred,inpTruth,inpMetrNms=c("err","acc","sens","spec")) {
   retVals <- numeric()
   for ( metrTmp in inpMetrNms ) {
@@ -135,7 +133,7 @@ summPreds <- function(inpPred,inpTruth,inpMetrNms=c("err","acc","sens","spec")) 
 
 Below we will try to fit the logistic regression model and will use bootstrapping of the training sample to help give us a better estimate of the training and test error.
 
-```{r logistic_regression_with_resampling }
+```{r logistic_regression_with_resampling, fig.width=10, fig.height=6 }
 set.seed(1)
 dfTmpLR <- NULL
 for ( i in 1:50) { # for each group:
@@ -165,11 +163,3 @@ labs(y='Error') +
 ggtitle("Logistic Regression Error") + theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Code to write to submissions final file included below:
-
-```{r write_to_file_Logistic_Regression}
-#final.predictions = data.frame(cbind(df_test[,'PassengerId'],as.factor(lrPred)))
-#colnames(final.predictions) = c('PassengerId','Survived')
-#final.predictions$Survived = ifelse(final.predictions$Survived==2,1,0) 
-#write.csv(final.predictions,'kaggle/titanic/all/titanic_predictions_LR.csv',row.names = FALSE)
-```
